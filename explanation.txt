@@ -1,0 +1,9 @@
+each player has a neural network(brain)
+with inputs so that it can predict how to move.
+the inputs pass through the hidden layers with leaky relu activation and then softsign outputs(scaled)
+it outpus a value -1 to 1 and if it is above or below a threshold it moves.
+after the points to win are reached the nets mutate using an evolutionary algorithm-
+if it has a top fitness it doesnt mutate otherwise it does based on how high the fitness is,
+fitness is calculated by how many times it hits the ball (and if it doesnt, rewards it based on distance to the ball) and points won
+
+over time it will get better and mutate less 
