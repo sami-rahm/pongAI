@@ -70,8 +70,20 @@ class neural_network:
             if random.uniform(0,1)<mutation_rate:
                 self.outputs[o][1]+=random.uniform(-1,1)*   mutation_rate
 
-
-
+    def copy(self):
+            new_net = neural_network(len(self.inputs), [len(h) for h in self.hidden], len(self.outputs))
+            # Copy weights
+            for l in range(len(self.weights)):
+                for i in range(len(self.weights[l])):
+                    for j in range(len(self.weights[l][i])):
+                        new_net.weights[l][i][j] = self.weights[l][i][j]
+            # Copy biases
+            for l in range(len(self.hidden)):
+                for i in range(len(self.hidden[l])):
+                    new_net.hidden[l][i][1] = self.hidden[l][i][1]
+            for i in range(len(self.outputs)):
+                new_net.outputs[i][1] = self.outputs[i][1]
+            return new_net
 
 
 class ball:
@@ -107,15 +119,20 @@ class ball:
               
                 p.score += 2
                 p.computefitness(p.score)
-                print("collision")
+                #print("collision")
         
     def move(self,p):
         
         if self.y+self.radius>500 or self.y-self.radius<0:
-            self.vel_y*=-1
+    
+            rand=random.uniform(0.99,1.01)
+            self.vel_y*=-rand
+            self.vel_x/=rand
         if self.iscollided:
             self.x+=1
-            self.vel_x*=-1
+            rand=random.uniform(0.99,1.01)
+            self.vel_x*=-rand#prevent ball from repeating patterns
+            self.vel_y/=rand
             self.iscollided=False
         self.x+=self.vel_x
         self.y+=self.vel_y
@@ -137,7 +154,7 @@ class player:
         self.y = y # Y coordinate of the player
         self.width = width # Width of the player
         self.height = height # Height of the player
-        self.net=neural_network(7,[5,5],1)#initialise network
+        self.net=neural_network(6,[18,10],1)#initialise network
         self.fitness=0
         self.mutationrate=1.01
         self.vel=0
@@ -152,7 +169,7 @@ class player:
 
     def draw(self, win): # Draws the player on the window
         pygame.draw.rect(win, self.colour, (self.x, self.y, self.width, self.height)) # Draws a rectangle with a red color
-    def move(self,speed,b,opp,movementthreshold):
+    def move(self,speed,b,opp,movementthreshold,g):
         self.gainedpoint=False
         b.gainedgen=False
         self.iselite=False
@@ -162,13 +179,13 @@ class player:
                 self.score+=0.5
                 self.computefitness(self.score)
               
-                print("enemy gained point",self.score)
+                #print("enemy gained point",self.score)
             else:#if the player lost the ball half their score and reward based on distance to ball, give the enemy a point
-                self.score*=0.8
+                self.score*=0.9
                 sc=self.computescore(b)
                
                 self.score+=sc
-                print("player score",self.score)
+                print("player score",sc)
                 self.computefitness(self.score)
                 opp.points+=1
                 opp.score+=0.5
@@ -176,21 +193,21 @@ class player:
             self.y=250-self.height/2
             opp.y=250-opp.height/2   
             b.reset()
-            print('ball hit player wall')
+            #print('ball hit player wall')
             if self.points>=self.pointstowin or opp.points>=opp.pointstowin:
-                self.reset()
-                opp.reset()
+                self.reset(g)
+                opp.reset(g)
                 self.gen+=1
                 opp.gen+=1
-                print("new generation",self.gen,opp.gen)
+               # print("new generation",self.gen,opp.gen)
 
         if b.x+b.radius>800 :#if ball hits enemy wall
             if self.isenemy:
-                self.score*=0.8
+                self.score*=0.9
                 sc=self.computescore(b)
                
                 self.score+=sc
-                print("enemy score",self.score)
+                #print("enemy score",self.score)
                 self.computefitness(self.score)
                 
                 opp.points+=1
@@ -203,24 +220,28 @@ class player:
                 self.score+=0.5
                 self.computefitness(self.score)
                 
-                print("enemy gained point",self.score)
-            print('ball hit enemy wall')
+                #print("enemy gained point",self.score)
+            #print('ball hit enemy wall')
             self.y=250-self.height/2
             opp.y=250-opp.height/2
             b.reset()
             if self.points>=self.pointstowin or opp.points>=opp.pointstowin:
-                self.reset()
-                opp.reset()
+                self.reset(g)
+                opp.reset(g)
                 self.gen+=1
                 opp.gen+=1
-                print("new generation",self.gen,opp.gen)
+                #print("new generation",self.gen,opp.gen)
        
         #region predicted movement- takes inputs and feeds them into the network   
         if self.y<0:
+ 
+            self.computefitness(self.score)
             self.y+=speed
         if self.y>500-self.height:
+         
+            self.computefitness(self.score)
             self.y-=speed
-        self.predictedval=self.net.forward([self.y/500,b.y/500,b.x/800,b.vel_x,b.vel_y,opp.vel,opp.y/500])[0]
+        self.predictedval=self.net.forward([self.y/500,b.y/500,b.x/800,b.vel_x/speed,b.vel_y/speed,opp.y/500])[0]
         if self.predictedval>movementthreshold:
             self.vel=speed
         elif self.predictedval<movementthreshold and self.predictedval>-movementthreshold:
@@ -228,31 +249,47 @@ class player:
         elif self.predictedval<-movementthreshold:
             self.vel=-speed
         self.y+=self.vel
+        self.score+=0.0005/self.pointstowin
+        self.computefitness(self.score)
         #endregion
        
 
     def computefitness(self,score):
-        if score>=40:
-            self.fitness=1
-        else:
-            self.fitness=score/40
-
+        self.fitness=score/(10+score)
     def computescore(self,b):
-        return 1/(1+abs(self.y-self.height/2-b.y)/10) #rewards for being close to the ball
-    def reset(self):
+        return 2/(1+abs(self.y-self.height/2-b.y)/10) #rewards for being close to the ball
+    def reset(self,g):
         self.y=250-self.height/2
         self.vel=0
         self.score=0
         self.points=0
         if not self.iselite:
-            self.mutate()
+            self.mutate(g)
             self.fitness=0
         
-    def mutate(self):
-        self.mutationrate=(1.01-self.fitness)/4 if random.uniform(0,1)<0.9 else 1.01-self.fitness #occasionally "factory reset"
-
-        self.net.modifyby_evolution(self.mutationrate)
-        print("mutation happened",self.mutationrate)
+    def mutate(self,g):
+        rnd=random.uniform(0,1)
+        if rnd<0.5 :    
+            self.mutationrate=(1.01-self.fitness)/4
+            self.net.modifyby_evolution(self.mutationrate)
+            print("mutation happened",self.mutationrate)
+        elif rnd<0.9:
+            if not self.isenemy:
+                elites=sorted(range(g.population),key=lambda x: g.players[x].fitness,reverse=True)[:g.elitesn]
+                self.net=random.choice([g.players[i].net.copy() for i in elites])#copy elite network
+            if self.isenemy:
+                elites=sorted(range(g.population),key=lambda x: g.enemies[x].fitness,reverse=True)[:g.elitesn]
+                self.net=random.choice([g.enemies[i].net.copy() for i in elites])
+            
+            self.mutationrate=(1.01-self.fitness)/5
+            self.net.modifyby_evolution(self.mutationrate)
+            print("elite copy",self.mutationrate)
+        else:
+            self.net=neural_network(6,[18,10],1)#initialise network
+            self.mutationrate=(1.01-self.fitness)/4
+            print("reset network",self.mutationrate)
+        
+           
 
 class game:
     def __init__(self,width,height, population, ptw,speed,elitesn,movementthreshold,win): 
@@ -285,14 +322,15 @@ class game:
                 self.enemies[i].iselite=True
     def run(self,txt,txt2):
         for p in range(self.population):#apply movement
-            self.players[p].move(self.speed,self.balls[p],self.enemies[p],self.movethreshold)
-            self.enemies[p].move(self.speed,self.balls[p],self.players[p],self.movethreshold)
+            self.players[p].move(self.speed,self.balls[p],self.enemies[p],self.movethreshold,self)
+            self.enemies[p].move(self.speed,self.balls[p],self.players[p],self.movethreshold,self)
             self.balls[p].move(self.players[p])
             self.balls[p].collisioncheck(self.players[p])
             self.balls[p].collisioncheck(self.enemies[p])
         self.findelites()
         for i in range(self.population):#only render the top performing games
             if (self.players[i].fitness+self.enemies[i].fitness)/2==max((self.players[n].fitness+self.enemies[n].fitness)/2 for n in range(self.population)):
+                
                 self.players[i].draw(self.win)
                 self.enemies[i].draw(self.win)
                 self.balls[i].draw(self.win)
@@ -320,10 +358,11 @@ font=pygame.font.SysFont('verdana', 15) # Creates a font object with the given f
 txt=font.render(None,1,(255,255,255)) # Renders the text with the given font and color
 txt2=font.render(None,1,(255,255,255)) # Renders the text with the given font and color
 #width height population points to win speed number of elites movement threshold window
-game1=game(20,250,10,2,15,3,0.5,win) # Creates the game object with the given player and ball
+
+game1=game(20,200,20,2,30,3,0.4,win) # Creates the game object with the given player and ball
 run = True # This is a boolean variable that will be used to run the game loop
 while run:
-    pygame.time.delay(13) # This will delay the game the given amount of milliseconds 0.013 seconds or 75fps
+    pygame.time.delay(7) # This will delay the game the given amount of milliseconds 0.013 seconds or 75fps
     win.fill((37, 21, 46))
     for event in pygame.event.get():  
         if event.type == pygame.QUIT:
