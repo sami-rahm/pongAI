@@ -1,27 +1,29 @@
 import pygame 
 import random
 import math
+import time
 pygame.init()
 
 
 class neural_network:
     def __init__(self,inp,h,o):#initialise network
         self.inputs=[1 for _ in range(inp)]
-        self.hidden=[[[1,random.uniform(-0.5,0.5)] for _ in range(h[i])] for i in range(len(h))]#neuron value,bias
-        self.outputs=[[1,random.uniform(-0.5,0.5)] for _ in range(o) ]
+        lim=math.sqrt(2/(inp+o))#limit for weights and biases
+        self.hidden=[[[1,random.uniform(-lim,lim)] for _ in range(h[i])] for i in range(len(h))]#neuron value,bias
+        self.outputs=[[1,random.uniform(-lim,lim)] for _ in range(o) ]
         self.weights=[]
 
-        self.weights.append([[random.uniform(-0.5,0.5) for i in range(h[0])] for _ in range(inp)])
+        self.weights.append([[random.uniform(-lim,lim) for i in range(h[0])] for _ in range(inp)])
 
         for i in range(len(h)-1):
-            self.weights.append([[random.uniform(-0.5,0.5) for n in range(h[i+1])] for w in range(h[i])])
+            self.weights.append([[random.uniform(-lim,lim) for n in range(h[i+1])] for w in range(h[i])])
 
-        self.weights.append([[random.uniform(-0.5,0.5) for i in range(o)] for _ in range(h[-1])]) 
+        self.weights.append([[random.uniform(-lim,lim) for i in range(o)] for _ in range(h[-1])]) 
        
         #layer indexing is [layer][source neuron][target neuron]
    
     def softsign(self,n):#scaled softsign 
-        return n/(1+abs(n*2))*2
+        return n/(1+abs(n*2))+0.5
     def leakyrelu(self,n):
         if n>0:
             return n
@@ -96,8 +98,8 @@ class ball:
         if theta<0 and theta>-0.2:theta-=0.2
         if theta>0 and theta<0.2:theta+=0.2
         rnd=random.choice((-1,1))
-        self.vel_x=math.cos(theta)*self.speed*rnd
-        self.vel_y=math.sin(theta)*self.speed*rnd
+        self.vel_x=self.qcos(theta)*self.speed*rnd
+        self.vel_y=self.qsin(theta)*self.speed*rnd
         self.iscollided=False
         self.colour=colour
       
@@ -117,20 +119,26 @@ class ball:
                 else:
                     self.x = p.x + p.width + self.radius+1  # Place ball at right edge of player paddle
               
-                p.score += 2
+                reward=p.computescore(self)+2
+                print("reward",reward)
+                p.score+=reward
                 p.computefitness(p.score)
                 #print("collision")
         
     def move(self,p):
-        
-        if self.y+self.radius>500 or self.y-self.radius<0:
-    
-            rand=random.uniform(0.99,1.01)
+        if self.y+self.radius>500:
+            self.y=499-self.radius
+            rand=random.uniform(0.9,1.1)
+            self.vel_y*=-rand
+            self.vel_x/=rand
+        elif self.y-self.radius<0:
+            self.y=1+self.radius
+            rand=random.uniform(0.9,1.1)
             self.vel_y*=-rand
             self.vel_x/=rand
         if self.iscollided:
-            self.x+=1
-            rand=random.uniform(0.99,1.01)
+         
+            rand=random.uniform(0.9,1.1)
             self.vel_x*=-rand#prevent ball from repeating patterns
             self.vel_y/=rand
             self.iscollided=False
@@ -143,10 +151,25 @@ class ball:
         if theta<0 and theta>-0.2:theta-=0.2
         if theta>0 and theta<0.2:theta+=0.2
         rnd=random.choice((-1,1))
-        self.vel_x=math.cos(theta)*self.speed*rnd
-        self.vel_y=math.sin(theta)*self.speed*rnd
+        self.vel_x=self.qcos(theta)*self.speed*rnd
+        self.vel_y=self.qsin(theta)*self.speed*rnd
         self.iscollided=False
-       
+    def qsin(self,theta):   
+        if theta==0:
+            return 0  
+        pi=3.1416
+        n=theta%pi
+        x=pi-n
+        ans= 16*n*x/(5*pi*pi-4*n*x)
+        if (theta//pi)%2==0:
+            return ans
+        else:
+            return -ans
+    def qcos(self,theta):
+        pi=3.1416
+        return self.qsin(theta+pi/2)
+            
+      
              
 class player:
     def __init__(self, x, y, width, height,colour,isenemy): # Initializes the player with the given x and y coordinates and width and height
@@ -154,14 +177,14 @@ class player:
         self.y = y # Y coordinate of the player
         self.width = width # Width of the player
         self.height = height # Height of the player
-        self.net=neural_network(6,[18,10],1)#initialise network
+        self.net=neural_network(6,[16,10],3)#initialise network
         self.fitness=0
-        self.mutationrate=1.01
+        self.mutationrate=0.4
         self.vel=0
         self.score=0
         self.points=0
         self.gen=0
-        self.predictedval=0
+        self.predictedvals=[None]
         self.colour=colour
         self.isenemy=isenemy
         self.iselite=False
@@ -169,7 +192,8 @@ class player:
 
     def draw(self, win): # Draws the player on the window
         pygame.draw.rect(win, self.colour, (self.x, self.y, self.width, self.height)) # Draws a rectangle with a red color
-    def move(self,speed,b,opp,movementthreshold,g):
+    def move(self,speed,b,opp,g):
+       
         self.gainedpoint=False
         b.gainedgen=False
         self.iselite=False
@@ -232,24 +256,26 @@ class player:
                 opp.gen+=1
                 #print("new generation",self.gen,opp.gen)
        
-        #region predicted movement- takes inputs and feeds them into the network   
-        if self.y<0:
- 
-            self.computefitness(self.score)
+       
+        if self.y<0: 
             self.y+=speed
-        if self.y>500-self.height:
-         
-            self.computefitness(self.score)
+        if self.y>500-self.height: 
             self.y-=speed
-        self.predictedval=self.net.forward([self.y/500,b.y/500,b.x/800,b.vel_x/speed,b.vel_y/speed,opp.y/500])[0]
-        if self.predictedval>movementthreshold:
-            self.vel=speed
-        elif self.predictedval<movementthreshold and self.predictedval>-movementthreshold:
-            self.vel=0
-        elif self.predictedval<-movementthreshold:
+        #region predicted movement- takes inputs and feeds them into the network   
+        self.predictedvals=self.net.forward([self.y/500,b.y/500,b.x/800,b.vel_x/speed,b.vel_y/speed,opp.y/500])
+        upsignal=self.predictedvals[0]
+        staysignal=self.predictedvals[1]
+        downsignal=self.predictedvals[2]
+        if upsignal>staysignal and upsignal>downsignal:
             self.vel=-speed
+        elif downsignal>upsignal and downsignal>staysignal:
+            self.vel=speed
+        else:
+            self.vel=0
+           
+        
         self.y+=self.vel
-        self.score+=0.0005/self.pointstowin
+        self.score+=0.001/self.pointstowin
         self.computefitness(self.score)
         #endregion
        
@@ -269,7 +295,7 @@ class player:
         
     def mutate(self,g):
         rnd=random.uniform(0,1)
-        if rnd<0.5 :    
+        if rnd<0.7 :    
             self.mutationrate=(1.01-self.fitness)/4
             self.net.modifyby_evolution(self.mutationrate)
             print("mutation happened",self.mutationrate)
@@ -285,14 +311,14 @@ class player:
             self.net.modifyby_evolution(self.mutationrate)
             print("elite copy",self.mutationrate)
         else:
-            self.net=neural_network(6,[18,10],1)#initialise network
+            self.net=neural_network(6,[16,10],3)#initialise network
             self.mutationrate=(1.01-self.fitness)/4
             print("reset network",self.mutationrate)
         
            
 
 class game:
-    def __init__(self,width,height, population, ptw,speed,elitesn,movementthreshold,win): 
+    def __init__(self,width,height, population, ptw,speed,elitesn,win): 
         colours=[(random.randint(0,255),random.randint(0,255),random.randint(0,255)) for i in range(population)]
         self.players=[player(20, 250-height/2, width, height,colours[i],False) for i in range(population)] # Creates a player object
         self.enemies=[player(780-width, 250-height/2, width, height,colours[i],True) for i in range(population)] # Creates the enemies object
@@ -302,7 +328,7 @@ class game:
         self.ptw=ptw
         self.speed=speed
         self.win=win
-        self.movethreshold=movementthreshold
+       
     def drawall(self):#draw all (unused for now)
         for i in range(len(self.players)):
             self.players[i].draw(win)
@@ -322,8 +348,8 @@ class game:
                 self.enemies[i].iselite=True
     def run(self,txt,txt2):
         for p in range(self.population):#apply movement
-            self.players[p].move(self.speed,self.balls[p],self.enemies[p],self.movethreshold,self)
-            self.enemies[p].move(self.speed,self.balls[p],self.players[p],self.movethreshold,self)
+            self.players[p].move(self.speed,self.balls[p],self.enemies[p],self)
+            self.enemies[p].move(self.speed,self.balls[p],self.players[p],self)
             self.balls[p].move(self.players[p])
             self.balls[p].collisioncheck(self.players[p])
             self.balls[p].collisioncheck(self.enemies[p])
@@ -357,22 +383,34 @@ pygame.font.init() # Initializes the font module
 font=pygame.font.SysFont('verdana', 15) # Creates a font object with the given font and size
 txt=font.render(None,1,(255,255,255)) # Renders the text with the given font and color
 txt2=font.render(None,1,(255,255,255)) # Renders the text with the given font and color
-#width height population points to win speed number of elites movement threshold window
-
-game1=game(20,200,20,2,30,3,0.4,win) # Creates the game object with the given player and ball
+#width height population points to win speed number of elites  window
+width=int(input("width "))
+height=int(input("height "))
+population=int(input("population "))
+ptw=int(input("points to win "))
+speed=float(input("speed "))
+elitesn=int(input("no of elites "))
+fps=int(input("fps "))
+delay=int(1000/fps)
+game1=game(width,height,population,ptw,speed,elitesn,win) # Creates the game object with the given player and ball
+i=0
 run = True # This is a boolean variable that will be used to run the game loop
 while run:
-    pygame.time.delay(7) # This will delay the game the given amount of milliseconds 0.013 seconds or 75fps
+    t=time.time()
+    pygame.time.delay(delay) # This will delay the game the given amount of milliseconds 0.013 seconds or 75fps
     win.fill((37, 21, 46))
     for event in pygame.event.get():  
         if event.type == pygame.QUIT:
             run = False  # Ends the game loop
-  
+
     game1.run(txt,txt2)
-   
+    if i%100==0:
+        fps=int(1/(time.time()-t))
+    txt=font.render("fps: "+str(fps),1,(255,255,255)) # Renders the text with the given font and color
+    win.blit(txt,(0,0)) # Blits the text on the window
   
     pygame.display.update()
-
+    i+=1
 
 pygame.quit()  # If we exit the loop this will execute and close our game
 #endregion
