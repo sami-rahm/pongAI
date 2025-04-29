@@ -8,9 +8,9 @@ pygame.init()
 class neural_network:
     def __init__(self,inp,h,o):#initialise network
         self.inputs=[1 for _ in range(inp)]
-        lim=math.sqrt(2/(inp+o))#limit for weights and biases
-        self.hidden=[[[1,random.uniform(-lim,lim)] for _ in range(h[i])] for i in range(len(h))]#neuron value,bias
-        self.outputs=[[1,random.uniform(-lim,lim)] for _ in range(o) ]
+        lim=math.sqrt(6/(inp+o))#limit for weights
+        self.hidden=[[[0,0] for _ in range(h[i])] for i in range(len(h))]#neuron value,bias
+        self.outputs=[[0,0] for _ in range(o) ]
         self.weights=[]
 
         self.weights.append([[random.uniform(-lim,lim) for i in range(h[0])] for _ in range(inp)])
@@ -405,6 +405,7 @@ class player:
             self.net=neural_network(6,[16,10],3)#initialise network
             self.mutationrate=(1.01-self.fitness)/4
             #print("reset network",self.mutationrate)
+    
         
            
 
@@ -486,10 +487,10 @@ inp=input("enter 1 for default values or 0 for custom values")
 if inp=="1":
     width=31
     height=200
-    population=50
+    population=30
     ptw=2
     speed=60
-    elitesn=5
+    elitesn=3
     bounceError=0.1#radians where 0.1 is 6 deg
     fps=165
 
