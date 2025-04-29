@@ -94,7 +94,7 @@ class ball:
         self.y = y # Y coordinate of the ball
         self.radius = radius # Radius of the ball
         self.speed=speed
-        theta=random.uniform(-0.5,0.5)#generate an angle between 30,-30 excluding angles between 10 and -10
+        theta=random.uniform(-0.7,0.7)#generate an angle between 35,-35 excluding angles between 10 and -10
         if theta<0 and theta>-0.2:theta-=0.2
         if theta>0 and theta<0.2:theta+=0.2
         rnd=random.choice((-1,1))
@@ -119,35 +119,56 @@ class ball:
                 else:
                     self.x = p.x + p.width + self.radius+1  # Place ball at right edge of player paddle
               
-                reward=p.computescore(self)+2
-                print("reward",reward)
+                reward=p.computescore(self)+1
+                #if reward>2.999:
+                    #print("reward",reward)
                 p.score+=reward
                 p.computefitness(p.score)
                 #print("collision")
         
-    def move(self,p):
+    def move(self,bounceerror):
         if self.y+self.radius>500:
             self.y=499-self.radius
-            rand=random.uniform(0.9,1.1)
-            self.vel_y*=-rand
-            self.vel_x/=rand
+            self.vel_y*=-1
+            angle=math.atan2(self.vel_y,self.vel_x)
+            rand=random.uniform(angle-bounceerror,angle+bounceerror)
+            self.vel_y=self.speed*math.sin(rand)
+            self.vel_x=self.speed*math.cos(rand)
         elif self.y-self.radius<0:
             self.y=1+self.radius
-            rand=random.uniform(0.9,1.1)
-            self.vel_y*=-rand
-            self.vel_x/=rand
+            self.vel_y*=-1
+            angle=math.atan2(self.vel_y,self.vel_x)
+            rand=random.uniform(angle-bounceerror,angle+bounceerror)
+            self.vel_y=self.speed*math.sin(rand)
+            self.vel_x=self.speed*math.cos(rand)
         if self.iscollided:
-         
-            rand=random.uniform(0.9,1.1)
-            self.vel_x*=-rand#prevent ball from repeating patterns
-            self.vel_y/=rand
+            ratio=abs(self.vel_y/self.vel_x) #also known as tangent
+            #uses trig values of 40 and 15 deg to maintain the total normalised velocity to be one 
+            if ratio>1:#if gradient is too steep (greater than 45 degrees) then it will be 40 degress
+                rx= 1 if self.vel_x<0 else -1
+                ry=-1 if self.vel_y<0 else 1
+                self.vel_x=self.speed*rx*0.765
+                self.vel_y=self.speed*ry*0.644
+                
+            elif ratio<0.0875:#if gradient is too shallow (less than 5 degrees) then it will be 10 degrees
+                rx= 1 if self.vel_x<0 else -1
+                ry=-1 if self.vel_y<0 else 1
+                self.vel_x=self.speed*rx*0.985
+                self.vel_y=self.speed*ry*0.174
+            else:
+                self.vel_x*=-1
+                angle=math.atan2(self.vel_y,self.vel_x)
+                rand=random.uniform(angle-bounceerror,angle+bounceerror)
+                self.vel_y=self.speed*math.sin(rand)
+                self.vel_x=self.speed*math.cos(rand)
             self.iscollided=False
         self.x+=self.vel_x
         self.y+=self.vel_y
+       
     def reset(self):
         self.x=400
         self.y=250
-        theta=random.uniform(-0.5,0.5)#generate an angle between 30,-30 excluding angles between 10 and -10
+        theta=random.uniform(-0.7,0.7)#generate an angle between 35,-35 excluding angles between 10 and -10
         if theta<0 and theta>-0.2:theta-=0.2
         if theta>0 and theta<0.2:theta+=0.2
         rnd=random.choice((-1,1))
@@ -168,7 +189,17 @@ class ball:
     def qcos(self,theta):
         pi=3.1416
         return self.qsin(theta+pi/2)
-            
+    def qtan(self,theta):
+        return self.qsin(theta)/self.qcos(theta)
+    def qatan(self,theta):#probably no point of these approximations since python is slow
+        halfpi=1.5708
+        fa=(halfpi*theta)/(1+abs(theta))
+        if theta<5 and theta>-5:
+            return fa
+        sa=theta*(45+theta**2)/(45+9*theta**2)
+       
+        
+        return (fa+sa)/2
       
              
 class player:
@@ -205,11 +236,11 @@ class player:
               
                 #print("enemy gained point",self.score)
             else:#if the player lost the ball half their score and reward based on distance to ball, give the enemy a point
-                self.score*=0.9
+                self.score*=0.7
                 sc=self.computescore(b)
                
                 self.score+=sc
-                print("player score",sc)
+                #print("player score",sc)
                 self.computefitness(self.score)
                 opp.points+=1
                 opp.score+=0.5
@@ -227,7 +258,7 @@ class player:
 
         if b.x+b.radius>800 :#if ball hits enemy wall
             if self.isenemy:
-                self.score*=0.9
+                self.score*=0.7
                 sc=self.computescore(b)
                
                 self.score+=sc
@@ -279,11 +310,48 @@ class player:
         self.computefitness(self.score)
         #endregion
        
+    def geneticcrossover(self,other):#crossover between two players
+        new_net=neural_network(len(self.net.inputs), [len(h) for h in self.net.hidden], len(self.net.outputs))
+        for l in range(len(self.net.weights)):
+            for i in range(len(self.net.weights[l])):
+                for j in range(len(self.net.weights[l][i])):
+                    if random.uniform(0,1)<0.5:
+                        new_net.weights[l][i][j] = self.net.weights[l][i][j]
+                    else:
+                        new_net.weights[l][i][j] = other.weights[l][i][j]
+        for l in range(len(self.net.hidden)):
+            for i in range(len(self.net.hidden[l])):
+                if random.uniform(0,1)<0.5:
+                    new_net.hidden[l][i][1] = self.net.hidden[l][i][1]
+                else:
+                    new_net.hidden[l][i][1] = other.hidden[l][i][1]
+        for i in range(len(self.net.outputs)):
+            if random.uniform(0,1)<0.5:
+                new_net.outputs[i][1] = self.net.outputs[i][1]
+            else:
+                new_net.outputs[i][1] = other.outputs[i][1]
+        return new_net
+
 
     def computefitness(self,score):
-        self.fitness=score/(10+score)
+        if score<12:
+            self.fitness=score*0.03
+        elif score<26:
+            self.fitness=score*0.01+0.24
+        elif score<70:
+            self.fitness=score*0.005+0.37
+        elif score<200:
+            self.fitness=score*0.001+0.65
+        elif score<500:
+            self.fitness=score*0.0002+0.81
+        elif score<1400:
+            self.fitness=score*0.00005+0.885
+        elif score<2900:
+            self.fitness=score*0.00003+0.913
+        else:
+            self.fitness=1.0
     def computescore(self,b):
-        return 2/(1+abs(self.y-self.height/2-b.y)/10) #rewards for being close to the ball
+        return 2/(1+abs(self.y+self.height/2-b.y)/(self.height/4)) #rewards for being close to the ball
     def reset(self,g):
         self.y=250-self.height/2
         self.vel=0
@@ -298,36 +366,60 @@ class player:
         if rnd<0.7 :    
             self.mutationrate=(1.01-self.fitness)/4
             self.net.modifyby_evolution(self.mutationrate)
-            print("mutation happened",self.mutationrate)
-        elif rnd<0.9:
+            #print("mutation happened",self.mutationrate)
+        elif rnd<0.74:
+            efitness=0
             if not self.isenemy:
                 elites=sorted(range(g.population),key=lambda x: g.players[x].fitness,reverse=True)[:g.elitesn]
-                self.net=random.choice([g.players[i].net.copy() for i in elites])#copy elite network
+                ei1=random.choice([i for i in elites])
+                ei2=random.choice([i for i in elites])
+                efitness=(g.players[ei1].fitness+g.players[ei2].fitness)/2
+                self.net=g.players[ei1].geneticcrossover(g.players[ei2].net.copy()).copy()#mix elite genes
             if self.isenemy:
                 elites=sorted(range(g.population),key=lambda x: g.enemies[x].fitness,reverse=True)[:g.elitesn]
-                self.net=random.choice([g.enemies[i].net.copy() for i in elites])
-            
-            self.mutationrate=(1.01-self.fitness)/5
-            self.net.modifyby_evolution(self.mutationrate)
-            print("elite copy",self.mutationrate)
+                ei1=random.choice([i for i in elites])
+                ei2=random.choice([i for i in elites])
+                efitness=(g.enemies[ei1].fitness+g.enemies[ei2].fitness)/2
+                self.net=g.enemies[ei1].geneticcrossover(g.enemies[ei2].net.copy()).copy()#mix elite genes
+            if random.random()<0.7:
+                self.mutationrate=(1.01-efitness)/5
+                self.net.modifyby_evolution(self.mutationrate)
+            #print("elite crossover",self.mutationrate)
+        elif rnd<0.9:
+             if not self.isenemy:
+                elites=sorted(range(g.population),key=lambda x: g.players[x].fitness,reverse=True)[:g.elitesn]
+                eliteindex=random.choice([i for i in elites])
+                self.net=g.players[eliteindex].net.copy()
+                if random.random()<0.5:
+                    self.mutationrate=(1.01-g.players[eliteindex].fitness)/5
+                    self.net.modifyby_evolution(self.mutationrate)
+             if self.isenemy:
+                elites=sorted(range(g.population),key=lambda x: g.enemies[x].fitness,reverse=True)[:g.elitesn]
+                eliteindex=random.choice([i for i in elites])
+                self.net=g.enemies[eliteindex].net.copy()
+                if random.random()<0.5:
+                    self.mutationrate=(1.01-g.enemies[eliteindex].fitness)/5
+                    self.net.modifyby_evolution(self.mutationrate)
+
         else:
             self.net=neural_network(6,[16,10],3)#initialise network
             self.mutationrate=(1.01-self.fitness)/4
-            print("reset network",self.mutationrate)
+            #print("reset network",self.mutationrate)
         
            
 
 class game:
-    def __init__(self,width,height, population, ptw,speed,elitesn,win): 
+    def __init__(self,width,height, population, ptw,speed,elitesn,bounceError,win): 
         colours=[(random.randint(0,255),random.randint(0,255),random.randint(0,255)) for i in range(population)]
-        self.players=[player(20, 250-height/2, width, height,colours[i],False) for i in range(population)] # Creates a player object
+        self.players=[player(30, 250-height/2, width, height,colours[i],False) for i in range(population)] # Creates a player object
         self.enemies=[player(780-width, 250-height/2, width, height,colours[i],True) for i in range(population)] # Creates the enemies object
-        self.balls=[ball(400, 250, 10,colours[i],speed) for i in range(population)] # Creates the ball object
+        self.balls=[ball(400, 250, 15,colours[i],speed) for i in range(population)] # Creates the ball object
         self.elitesn=elitesn
         self.population=population
         self.ptw=ptw
         self.speed=speed
         self.win=win
+        self.bounceError=bounceError
        
     def drawall(self):#draw all (unused for now)
         for i in range(len(self.players)):
@@ -346,11 +438,16 @@ class game:
                 self.enemies[i].iselite=False
             else:
                 self.enemies[i].iselite=True
+    def maxfitness(self):#find max fitness of all players
+        plindex=max(range(self.population),key=lambda x: self.players[x].fitness)
+        enindex=max(range(self.population),key=lambda x: self.enemies[x].fitness)
+        return self.players[plindex].fitness,self.enemies[enindex].fitness,self.players[plindex].gen,self.enemies[enindex].gen
+      
     def run(self,txt,txt2):
         for p in range(self.population):#apply movement
             self.players[p].move(self.speed,self.balls[p],self.enemies[p],self)
             self.enemies[p].move(self.speed,self.balls[p],self.players[p],self)
-            self.balls[p].move(self.players[p])
+            self.balls[p].move(self.bounceError)
             self.balls[p].collisioncheck(self.players[p])
             self.balls[p].collisioncheck(self.enemies[p])
         self.findelites()
@@ -384,21 +481,35 @@ font=pygame.font.SysFont('verdana', 15) # Creates a font object with the given f
 txt=font.render(None,1,(255,255,255)) # Renders the text with the given font and color
 txt2=font.render(None,1,(255,255,255)) # Renders the text with the given font and color
 #width height population points to win speed number of elites  window
-width=int(input("width "))
-height=int(input("height "))
-population=int(input("population "))
-ptw=int(input("points to win "))
-speed=float(input("speed "))
-elitesn=int(input("no of elites "))
-fps=int(input("fps "))
+inp=input("enter 1 for default values or 0 for custom values")
+
+if inp=="1":
+    width=31
+    height=200
+    population=50
+    ptw=2
+    speed=60
+    elitesn=5
+    bounceError=0.1#radians where 0.1 is 6 deg
+    fps=165
+
+else:
+    width=int(input("width "))
+    height=int(input("height "))
+    population=int(input("population "))
+    ptw=int(input("points to win "))
+    speed=float(input("speed "))
+    elitesn=int(input("no of elites "))
+    bounceError=float(input("bounce error in radians "))#radians where 0.1 is 6 deg
+    fps=int(input("fps "))
 delay=int(1000/fps)
-game1=game(width,height,population,ptw,speed,elitesn,win) # Creates the game object with the given player and ball
+game1=game(width,height,population,ptw,speed,elitesn,bounceError,win) # Creates the game object with the given player and ball
 i=0
 run = True # This is a boolean variable that will be used to run the game loop
 while run:
     t=time.time()
     pygame.time.delay(delay) # This will delay the game the given amount of milliseconds 0.013 seconds or 75fps
-    win.fill((37, 21, 46))
+    win.fill((23, 24, 33))
     for event in pygame.event.get():  
         if event.type == pygame.QUIT:
             run = False  # Ends the game loop
@@ -406,6 +517,10 @@ while run:
     game1.run(txt,txt2)
     if i%100==0:
         fps=int(1/(time.time()-t))
+    if i%1000==0:
+        pf,ef,pg,eg=game1.maxfitness()
+        print("player fitness",f'{pf:.2f}',"enemy fitness",f'{ef:.2f}',"player gen",pg,"enemy gen",eg)
+        #print("max fitness",game1.maxfitness())
     txt=font.render("fps: "+str(fps),1,(255,255,255)) # Renders the text with the given font and color
     win.blit(txt,(0,0)) # Blits the text on the window
   
